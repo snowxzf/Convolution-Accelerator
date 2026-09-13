@@ -23,28 +23,30 @@ logic sum_valid;
 logic [14:0] sum;
 
 // column counter
-logic new_row; 
-logic [6:0] WIDTH;
-assign WIDTH = 128; 
+logic new_row;
+logic wrapped;                // held-high marker that the column counter just wrapped
+localparam int WIDTH = 128;   // must be wide enough to hold 128 (a 7-bit reg truncates it to 0)
 
 always_ff @(posedge clk) begin
     if (reset) begin
-        col <= 0;
-        new_row <= 0;
-    end 
-
-    else if (pixel_valid) begin 
-        if (col == WIDTH-1) begin 
-            col <= 0; 
-            new_row <= 1;
-        end else begin 
-            col <= col + 1;
-            new_row <= 0; 
-        end 
-    end else begin 
-        new_row <= 0; 
+        col     <= 0;
+        wrapped <= 0;
     end
+    else if (pixel_valid) begin
+        if (col == WIDTH-1) begin
+            col     <= 0;
+            wrapped <= 1;
+        end else begin
+            col     <= col + 1;
+            wrapped <= 0;
+        end
+    end
+    // wrapped is deliberately NOT cleared while pixel_valid is low (kept for
+    // parity with the single-MAC top; harmless for the streaming 9-MAC case)
 end
+
+// the first pixel of a new row is the one fed right after a column wrap
+assign new_row = pixel_valid && wrapped;
 
 line_buffer LB (
     .clk(clk),
@@ -79,7 +81,7 @@ convolution_9mac CONV (
     .w10(w10), .w11(w11), .w12(w12),
     .w20(w20), .w21(w21), .w22(w22),
 
-    .sum_valid(conv_valid),
+    .sum_valid(sum_valid),
     .sum_out(sum)
 );
 

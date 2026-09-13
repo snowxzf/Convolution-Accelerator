@@ -8,7 +8,9 @@ module blur_top(
     input  logic [7:0] pixel_in,
 
     output logic pixel_out_valid,
-    output logic [7:0] pixel_out
+    output logic [7:0] pixel_out,
+
+    output logic ready          // high when the single-MAC core can take a new pixel
 );
 
 logic [6:0] col;
@@ -23,28 +25,30 @@ logic sum_valid;
 logic [14:0] sum;
 
 // column counter
-logic new_row; 
-logic [6:0] WIDTH;
-assign WIDTH = 128; 
+logic new_row;
+logic wrapped;                // held-high marker that the column counter just wrapped
+localparam int WIDTH = 128;   // must be wide enough to hold 128 (a 7-bit reg truncates it to 0)
 
 always_ff @(posedge clk) begin
     if (reset) begin
-        col <= 0;
-        new_row <= 0;
-    end 
-
-    else if (pixel_valid) begin 
-        if (col == WIDTH-1) begin 
-            col <= 0; 
-            new_row <= 1;
-        end else begin 
-            col <= col + 1;
-            new_row <= 0; 
-        end 
-    end else begin 
-        new_row <= 0; 
+        col     <= 0;
+        wrapped <= 0;
     end
+    else if (pixel_valid) begin
+        if (col == WIDTH-1) begin
+            col     <= 0;
+            wrapped <= 1;
+        end else begin
+            col     <= col + 1;
+            wrapped <= 0;
+        end
+    end
+    // wrapped is deliberately NOT cleared while pixel_valid is low, so the gap
+    // between pixels in the single-MAC handshake keeps the new-row marker alive
 end
+
+// the first pixel of a new row is the one fed right after a column wrap
+assign new_row = pixel_valid && wrapped;
 
 line_buffer LB (
     .clk(clk),
@@ -60,7 +64,7 @@ window WINDOW (
     .clk(clk),
     .reset(reset),
     .pixel_valid(pixel_valid),
-    .new_row(new_row),   // ← ADD THIS
+    .new_row(new_row),
     .row_m1_pixel(row_m1_pixel),
     .row_m2_pixel(row_m2_pixel),
     .pixel_in(pixel_in),
@@ -78,7 +82,8 @@ convolution_onemac CONV (
     .w10(w10), .w11(w11), .w12(w12),
     .w20(w20), .w21(w21), .w22(w22),
     .sum_valid(sum_valid),
-    .sum_out(sum_out)
+    .sum_out(sum),
+    .ready(ready)
 );
 
 normalizer NORM (

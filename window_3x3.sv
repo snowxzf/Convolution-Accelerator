@@ -21,51 +21,41 @@ module window (
     output logic [7:0] w20, w21, w22
 ); 
 
-logic [1:0]counter; //keep track of amount of times it was shifted 
+// The window slides one column per accepted pixel. At the start of a new row
+// the two left-hand columns are off-image, so they must be forced to 0 (a
+// zero-padded left border) instead of keeping the previous row's rightmost
+// pixels. Emitting window_valid for every pixel gives exactly one output per
+// input pixel, i.e. a full 128x128 output frame.
 
-always_ff @(posedge clk) begin 
-    if (reset) begin 
+always_ff @(posedge clk) begin
+    if (reset) begin
         w00 <= 0; w01 <= 0; w02 <= 0;
         w10 <= 0; w11 <= 0; w12 <= 0;
         w20 <= 0; w21 <= 0; w22 <= 0;
-        //reset window reset 
-        window_valid <= 0; 
-        counter <= 0;
-    end 
-    
-    else if (new_row) begin
-        counter <= 0;
-        window_valid <= 0; //invalidate until theres 2 new columns
-        //but don't reset data since then prev 2 columns are 0
-    end 
-
-    else if (pixel_valid) begin 
-        //shift left
-        w00 <= w01; 
-        w10 <= w11; 
-        w20 <= w21; 
-        w01 <= w02; 
-        w11 <= w12;
-        w21 <= w22;
-
-        //insert new rightmost column 
-        w02 <= row_m2_pixel;
-        w12 <= row_m1_pixel;
-        w22 <= pixel_in; 
-        //recieving the most bottom-right corner pixel
-
-        //increment counter if less than 2 
-        if (counter < 2) begin
-            counter <= counter + 1;
-        end 
-
+        window_valid <= 0;
     end
-    //check if two columns have been shifted (no -> 0)
-    //wants window to be valid for all cycles after 2 columns (sliding window)
-    //done immediately (used >= 1 since it only updates after full clock, so its still old value of counter)
-    //only valid when a new pixel is entering AND counter >= 1 meaning its a new, complete window 
-    window_valid <= (pixel_valid && counter >= 1);
-end 
+    else if (pixel_valid) begin
+        if (new_row) begin
+            // first pixel of a new row: left two columns are off-image -> 0,
+            // only the new rightmost column carries real data
+            w00 <= 0;            w01 <= 0;            w02 <= row_m2_pixel;
+            w10 <= 0;            w11 <= 0;            w12 <= row_m1_pixel;
+            w20 <= 0;            w21 <= 0;            w22 <= pixel_in;
+        end
+        else begin
+            // shift left, insert new rightmost column
+            w00 <= w01; w01 <= w02; w02 <= row_m2_pixel;
+            w10 <= w11; w11 <= w12; w12 <= row_m1_pixel;
+            w20 <= w21; w21 <= w22; w22 <= pixel_in;
+        end
+        // bottom-right-anchored window: every pixel produces one output,
+        // with zero padding along the top and left image edges
+        window_valid <= 1;
+    end
+    else begin
+        window_valid <= 0;
+    end
+end
 
 
 endmodule 

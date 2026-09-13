@@ -23,11 +23,24 @@ module line_buffer (
 
     integer i;
 
+    // combinational read of the two history rows at the current column, so the
+    // outputs line up with the (un-delayed) current pixel_in in the window.
+    // read-before-write is preserved because the array write below only takes
+    // effect on the next clock edge.
+    always_comb begin
+        if (row_sel == 1'b0) begin
+            row_m1_pixel = rowA[col]; // y-1
+            row_m2_pixel = rowB[col]; // y-2
+        end
+        else begin
+            row_m1_pixel = rowB[col];
+            row_m2_pixel = rowA[col];
+        end
+    end
+
     always_ff @(posedge clk) begin
         if (reset) begin
             row_sel <= 1'b0;
-            row_m1_pixel <= 8'd0;
-            row_m2_pixel <= 8'd0;
 
             for (i = 0; i < 128; i++) begin
                 rowA[i] <= 8'd0;
@@ -35,17 +48,11 @@ module line_buffer (
             end
         end
         else if (pixel_valid) begin
-            // output previous rows FIRST (read-before-write)
-            if (row_sel == 1'b0) begin
-                row_m1_pixel <= rowA[col]; // y-1
-                row_m2_pixel <= rowB[col]; // y-2
-                rowA[col]    <= pixel_in;  // write current row
-            end
-            else begin
-                row_m1_pixel <= rowB[col];
-                row_m2_pixel <= rowA[col];
-                rowB[col]    <= pixel_in;
-            end
+            // write current row (read-before-write vs the combinational read above)
+            if (row_sel == 1'b0)
+                rowA[col] <= pixel_in;
+            else
+                rowB[col] <= pixel_in;
 
             // end of row → swap roles
             if (col == 7'd127) begin
